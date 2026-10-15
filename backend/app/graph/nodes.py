@@ -20,6 +20,17 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
     from .llm import generate as default_generate
 
     query = sanitize(_last_user_text(state))
+    # Greeting short-circuit: no retrieval, no LLM waste
+    tl = query.lower().strip()
+    if tl in {"hi", "hello", "hey", "thanks", "thank you", "bye"} or (
+        len(tl.split()) <= 2 and not any(k in tl for k in ("pto", "leave", "policy", "benefit", "handbook", "review", "salary", "health", "vacation"))
+    ):
+        reply = "Hi! I can answer handbook questions (PTO, benefits, performance reviews) or book a performance review. What would you like?"
+        return {
+            "messages": _append(state, "assistant", reply),
+            "citations": [],
+            "last_route": "greeting",
+        }
     docs, context, citations = [], "", []
     if retriever_fn is not None:
         try:

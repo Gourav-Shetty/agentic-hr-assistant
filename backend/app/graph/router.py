@@ -43,6 +43,12 @@ def route_intent(text: str, stage: str = "idle") -> str:
         if has_faq and not has_booking and not slot_like and not name_like and "@" not in t:
             return "mixed"
         return "booking"
+    # idle/done: explicit slot/email/name clicks start booking even without verbs
+    if slot_like or "@" in t or name_like:
+        # pure slot/email/name with no FAQ -> booking; FAQ + slot ambiguous -> mixed to answer FAQ first
+        if has_faq and not has_booking:
+            return "mixed"
+        return "booking"
     if has_faq and has_booking:
         return "booking"
     if has_booking:

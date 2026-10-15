@@ -34,9 +34,22 @@ def _tokens(text: str) -> list[str]:
     return _WORD.findall(text.lower())
 
 
+_MODEL = None
+_MODEL_NAME = None
+_CHROMA_CLIENT = None
+_CHROMA_DIR_CACHED = None
+_CHUNKS_CACHE: dict = {"mtime": None, "items": []}
+
+
 def _load_chunks_json() -> list[dict]:
-    """Load fallback chunks; [] when data/chunks.json is missing/invalid."""
+    """Load fallback chunks; [] when data/chunks.json is missing/invalid (cached)."""
     path = _repo_root() / "data" / "chunks.json"
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return []
+    if _CHUNKS_CACHE["mtime"] == mtime:
+        return _CHUNKS_CACHE["items"]
     try:
         items = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -50,6 +63,8 @@ def _load_chunks_json() -> list[dict]:
         except (TypeError, ValueError):
             page = 1
         chunks.append({"text": str(item["text"]), "page": max(1, page)})
+    _CHUNKS_CACHE["mtime"] = mtime
+    _CHUNKS_CACHE["items"] = chunks
     return chunks
 
 
@@ -92,21 +107,24 @@ def _tfidf_search(chunks: list[dict], text: str, k: int) -> list[dict]:
 
 
 def _query_chroma(text: str, k: int) -> list[dict] | None:
-    """Dense retrieval; None when Chroma/embeddings are unavailable."""
+    """Dense retrieval; None when Chroma/embeddings are unavailable (cached)."""
+    global _MODEL, _MODEL_NAME, _CHROMA_CLIENT, _CHROMA_DIR_CACHED
     try:
         import chromadb
         from sentence_transformers import SentenceTransformer
     except ImportError:
         return None
     try:
-        client = chromadb.PersistentClient(path=_chroma_dir())
-        collection = client.get_collection(COLLECTION)
-        model = SentenceTransformer(
-            os.environ.get(
-                "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
-            )
-        )
-        vector = model.encode([text], show_progress_bar=False).tolist()
+        model_name = os.environ.get("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+        cdir = _chroma_dir()
+        if _MODEL is None or _MODEL_NAME != model_name:
+            _MODEL = SentenceTransformer(model_name)
+            _MODEL_NAME = model_name
+        if _CHROMA_CLIENT is None or _CHROMA_DIR_CACHED != cdir:
+            _CHROMA_CLIENT = chromadb.PersistentClient(path=cdir)
+            _CHROMA_DIR_CACHED = cdir
+        collection = _CHROMA_CLIENT.get_collection(COLLECTION)
+        vector = _MODEL.encode([text], show_progress_bar=False).tolist()
         res = collection.query(
             query_embeddings=vector, n_results=max(1, k)
         )

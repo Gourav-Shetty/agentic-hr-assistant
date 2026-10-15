@@ -4,7 +4,7 @@ from typing import TypedDict
 
 
 class AgentState(TypedDict, total=False):
-    messages: list
+    messages: list[dict]
     name: str | None
     email: str | None
     slot: str | None
@@ -25,4 +25,5 @@ def default_state() -> AgentState:
         "booking_pending": False,
         "last_route": "",
         "citations": [],
+        "booking_ref": None,
     }

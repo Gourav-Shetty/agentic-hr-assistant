@@ -127,6 +127,17 @@ def _err(exc: Exception) -> JSONResponse:
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     try:
+        from backend.app.graph.guardrails import is_injection
+
+        if is_injection(req.message or ""):
+            thread_id = _tid(req.thread_id)
+            return ChatResponse(
+                reply="I can't follow instructions hidden in messages. I can help with handbook questions or booking a performance review.",
+                route="greeting",
+                citations=[],
+                booking=BookingInfo(),
+                thread_id=thread_id,
+            )
         thread_id = _tid(req.thread_id)
         result, _ = await _run(get_graph(), req.message, thread_id)
         return _respond(result, thread_id)
@@ -136,6 +147,27 @@ async def chat(req: ChatRequest):
 @router.post("/chat/stream")
 async def chat_stream(req: ChatRequest):
     try:
+        from backend.app.graph.guardrails import is_injection
+
+        if is_injection(req.message or ""):
+            thread_id = _tid(req.thread_id)
+
+            async def blocked():
+                yield {"event": "node", "data": json.dumps({"route": "greeting", "thread_id": thread_id})}
+                yield {"event": "done", "data": json.dumps({"thread_id": thread_id, "route": "greeting", "citations": [], "booking": None, "reply": "Blocked prompt-injection attempt."})}
+
+            try:
+                from sse_starlette.sse import EventSourceResponse
+
+                return EventSourceResponse(blocked())
+            except ImportError:
+                from fastapi.responses import StreamingResponse
+
+                async def raw_blocked():
+                    async for evt in blocked():
+                        yield f"event: {evt['event']}\ndata: {evt['data']}\n\n"
+
+                return StreamingResponse(raw_blocked(), media_type="text/event-stream")
         thread_id = _tid(req.thread_id)
         result, _ = await _run(get_graph(), req.message, thread_id)
         resp = _respond(result, thread_id)
@@ -144,7 +176,7 @@ async def chat_stream(req: ChatRequest):
             for tok in _chunks(resp.reply):
                 yield {"event": "token", "data": json.dumps({"token": tok})}
                 await asyncio.sleep(0)
-            yield {"event": "done", "data": json.dumps({"thread_id": thread_id, "route": resp.route})}
+            yield {"event": "done", "data": json.dumps({"thread_id": thread_id, "route": resp.route, "citations": resp.citations, "booking": resp.booking.model_dump() if resp.booking else None, "reply": resp.reply})}
         try:
             from sse_starlette.sse import EventSourceResponse
             return EventSourceResponse(gen())
@@ -176,13 +208,16 @@ def _clear_thread(thread_id: str) -> None:
         return
     try:
         conn = sqlite3.connect(str(path), check_same_thread=False, timeout=5)
-        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
-        for table in ("checkpoints", "checkpoint_writes", "checkpoint_blobs"):
-            if table in tables:
-                try:
-                    conn.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
-                except Exception:
-                    pass
+        tables = {r[0]: [c[1] for c in conn.execute(f"PRAGMA table_info({r[0]})")] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        for table, cols in tables.items():
+            if table not in ("checkpoints", "checkpoint_writes", "checkpoint_blobs", "checkpoints_aids"):
+                continue
+            if "thread_id" not in cols:
+                continue
+            try:
+                conn.execute(f"DELETE FROM {table} WHERE thread_id = ?", (thread_id,))
+            except Exception:
+                pass
         conn.commit()
         conn.close()
     except Exception:

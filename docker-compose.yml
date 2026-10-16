@@ -7,7 +7,9 @@ services:
       - path: .env
         required: false # works with or without local keys (offline fallback)
     environment:
-      - CHECKPOINT_DB=./data/checkpoints.db
+      # Checkpoints live OFF the Windows bind mount (SQLite locking is flaky
+      # on shared filesystems). Static PDFs/chunks still come from ./data.
+      - CHECKPOINT_DB=/tmp/checkpoints.db
       - CHROMA_DIR=./data/chroma
     volumes:
       - ./data:/app/data

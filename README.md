@@ -77,6 +77,8 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 Docker: `docker compose up --build` → backend `:8000`, frontend `:5173`.
 Stop manual servers first (same ports). First build takes 10–20 min (CPU torch
 embeddings); later starts take seconds. Keys optional: no `.env` → offline mode.
+In compose, checkpoints live at `/tmp/checkpoints.db` (SQLite locking is flaky on
+Windows bind mounts) — threads persist across turns while the container runs.
 
 `.env` is gitignored and never pushed. Commit only `.env.example`.
 

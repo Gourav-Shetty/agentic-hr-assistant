@@ -85,25 +85,32 @@ def _make_checkpointer():
     try:
         from langgraph.checkpoint.sqlite import SqliteSaver
     except ImportError as exc:
-        print(f"checkpointer: langgraph-checkpoint-sqlite missing ({exc}); running stateless")
+        print(f"checkpointer: langgraph-checkpoint-sqlite missing ({exc}); running stateless", flush=True)
         return None
     try:
-        conn = sqlite3.connect(_db_path(), check_same_thread=False)
+        # timeout=30: bind mounts (Docker Desktop file sharing) can be slow to lock.
+        conn = sqlite3.connect(_db_path(), check_same_thread=False, timeout=30)
         cp = SqliteSaver(conn)
         setup = getattr(cp, "setup", None)
         if callable(setup):
             try:
                 setup()
             except Exception as exc:
-                print(f"checkpointer: setup warning ({type(exc).__name__}: {exc})")
-        print(f"checkpointer: sqlite ready at {_db_path()}")
+                print(f"checkpointer: setup warning ({type(exc).__name__}: {exc})", flush=True)
+        # Prove the DB is writable now, not on first user request.
+        try:
+            conn.execute("SELECT name FROM sqlite_master LIMIT 1").fetchall()
+        except Exception as exc:
+            print(f"checkpointer: DB not readable ({type(exc).__name__}: {exc})", flush=True)
+            return None
+        print(f"checkpointer: sqlite ready at {_db_path()}", flush=True)
         return cp
     except Exception as exc:
-        print(f"checkpointer: sqlite init failed ({type(exc).__name__}: {exc}); trying conn string")
+        print(f"checkpointer: sqlite init failed ({type(exc).__name__}: {exc}); trying conn string", flush=True)
         try:
             return SqliteSaver.from_conn_string(_db_path())
         except Exception as exc2:
-            print(f"checkpointer: unavailable ({type(exc2).__name__}); running stateless")
+            print(f"checkpointer: unavailable ({type(exc2).__name__}); running stateless", flush=True)
             return None
 
 

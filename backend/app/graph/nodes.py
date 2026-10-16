@@ -100,11 +100,24 @@ def booking_node(state: dict, llm_fn=None) -> dict:
         if "[Page" in prev and len(prev) > 20:
             prefix = prev + "\n\nReturning to your booking — "
 
+    tl = text.lower().strip()
+    is_greeting = tl in {"hi", "hello", "hey", "yo", "thanks", "thank you", "bye"} or (
+        len(tl.split()) <= 2 and tl in {"hey there", "hello there", "hi there"}
+    )
+    is_gibberish = len(tl) <= 4 or tl in {"wth", "huh", "what", "???", "??", "hmm"}
+
     if not name:
-        reply = "Sure, let's book your performance review. What is your full name?"
+        if is_greeting or is_gibberish:
+            have = f" (holding {slot})" if slot else ""
+            reply = f"Hey! We're booking your performance review{have} — I just need your full name to continue."
+        else:
+            reply = "Sure, let's book your performance review. What is your full name?"
         update["stage"] = "booking_name"
     elif not email or not validate_email(email or ""):
-        reply = f"Thanks {name}. What is your work email?"
+        if is_greeting or is_gibberish:
+            reply = f"Hi {name}! I still need your work email to hold {slot or 'your slot'} — what is it?"
+        else:
+            reply = f"Thanks {name}. What is your work email?"
         update["email"] = email if validate_email(email or "") else None
         update["stage"] = "booking_email"
     elif not slot:

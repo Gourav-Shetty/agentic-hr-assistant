@@ -10,7 +10,7 @@ Repo: `https://github.com/Gourav-Shetty/agentic-hr-assistant`
 
 ## Demo — context interleaving (real output)
 
-![Chat demo](docs/screenshot_chat.png)
+![Chat demo — real UI: mixed FAQ with Page-4 citation, resume, and #REV booking](docs/screenshot_ui.png)
 
 ```
 User:  Hi, I need to book a 1-on-1 Performance Review session.
@@ -22,7 +22,7 @@ Agent [mixed, citations=[4]]: Performance reviews at Zava are conducted **annual
         booking={name: Alex Chen, email: alex.chen@example.com}
 
 User:  Friday at 10:30 AM
-Agent [booking]: Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Reference #REV-8MVI.
+Agent [booking]: Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Reference #REV-6I4S.
 ```
 
 Full JSON: `docs/demo_transcript.json`. Verification log: `docs/verify_log.txt` (14/14 PASS).

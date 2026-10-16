@@ -75,6 +75,32 @@ OUT_OF_SCOPE_HINTS = (
     "joke", "poem", "story", "recipe", "weather", "news",
 )
 
+_IDENTITY_RE = re.compile(
+    r"\b(what|which) model\b|\bwho are you\b|trained by|openai|chatgpt|"
+    r"\b(gpt|gemini|claude|llama)\b.*\byou\b|\byou\b.*\b(ai|model|bot)\b",
+    re.IGNORECASE,
+)
+
+_CAPABILITY_RE = re.compile(
+    r"\bwhat (else )?can you do\b|\bwhat are your features\b|\b(list )?(your )?(features|capabilit|abilities)\b|\bhelp\b.*\bwhat\b",
+    re.IGNORECASE,
+)
+
+IDENTITY_REPLY = (
+    "I'm the Zava HR Assistant — a handbook helper and performance-review "
+    "booking agent running on this demo stack (LangGraph + FastAPI + React). "
+    "Ask me about PTO, benefits, performance reviews, or say 'book a review'."
+)
+
+CAPABILITY_REPLY = (
+    "Here's what I can do:\n"
+    "1. Answer handbook questions (performance reviews, leave/PTO, health benefits) with page citations.\n"
+    "2. Book a 1-on-1 performance review: I collect your name, work email, and slot, confirm with you, "
+    "then issue a #REV reference.\n"
+    "3. Keep context mid-booking — ask an FAQ anytime and I'll resume where we left off.\n"
+    "Try: 'How often are performance reviews conducted?' or 'Book a performance review'."
+)
+
 
 def _is_out_of_scope(query: str) -> bool:
     tl = query.lower()
@@ -105,6 +131,21 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
             "messages": _append(state, "assistant", reply),
             "citations": [],
             "last_route": "faq",
+            "just_answered_faq": False,
+        }
+    if _IDENTITY_RE.search(query):
+        return {
+            "messages": _append(state, "assistant", IDENTITY_REPLY),
+            "citations": [],
+            "last_route": "faq",
+            "just_answered_faq": False,
+        }
+    if _CAPABILITY_RE.search(query):
+        return {
+            "messages": _append(state, "assistant", CAPABILITY_REPLY),
+            "citations": [],
+            "last_route": "faq",
+            "just_answered_faq": False,
         }
     docs, context, citations = [], "", []
     if retriever_fn is not None:
@@ -173,6 +214,16 @@ def booking_node(state: dict, llm_fn=None) -> dict:
 
     if state.get("stage") == "done" and state.get("booking_ref"):
         # Already booked: never mint a second ref on re-invoke/double-submit.
+        # Fresh booking verbs ("book another") restart the flow instead.
+        if re.search(r"\b(book|schedule|rebook|another|again|new booking)\b", text, re.IGNORECASE):
+            return {
+                "name": None, "email": None, "slot": None,
+                "booking_pending": True, "last_route": "booking",
+                "citations": [], "stage": "booking_name", "booking_ref": None,
+                "just_answered_faq": False,
+                "messages": _append(state, "assistant",
+                                    "Starting a new booking — what is your full name?"),
+            }
         reply = (f"Your performance review is already booked for {slot} ({name}). "
                  f"Reference {state.get('booking_ref')}. Click New above to start another booking.")
         return {

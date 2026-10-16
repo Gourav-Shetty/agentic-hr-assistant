@@ -94,3 +94,41 @@ def test_normalize_query_fixes_typos():
 
     assert normalize_query("all the benegits") == "all the benefits"
     assert normalize_query("book a reveiw") == "book a review"
+
+
+def test_done_state_question_goes_to_knowledge():
+    from backend.app.graph.router import route_intent
+
+    assert route_intent("how will the performance interview go?", stage="done") == "faq"
+    assert route_intent("is it possible to know more?", stage="done") == "faq"
+
+
+def test_done_state_rebook_goes_to_booking():
+    from backend.app.graph.router import route_intent
+
+    assert route_intent("book another slot please", stage="done") == "booking"
+
+
+def test_identity_and_capability_replies():
+    from backend.app.graph.nodes import booking_node, rag_node
+
+    base = {"messages": [], "stage": "idle", "booking_pending": False,
+            "citations": [4], "just_answered_faq": False}
+    ident = rag_node({**base, "messages": [{"role": "user", "content": "what model are you?"}]})
+    assert "Zava HR Assistant" in ident["messages"][-1]["content"]
+    assert ident["citations"] == []
+    assert "OpenAI" not in ident["messages"][-1]["content"]
+
+    cap = rag_node({**base, "messages": [{"role": "user", "content": "what else can you do?"}]})
+    assert "book a 1-on-1" in cap["messages"][-1]["content"] or "Book a" in cap["messages"][-1]["content"]
+    assert cap["citations"] == []
+
+    booked = {"messages": [{"role": "user", "content": "book another please"}],
+              "name": "G", "email": "g@x.com", "slot": "Tomorrow 11AM",
+              "stage": "done", "booking_pending": False, "citations": [],
+              "just_answered_faq": False, "booking_ref": "#REV-ABC123"}
+    out = booking_node(dict(booked))
+    assert out["stage"] == "booking_name" and out["booking_ref"] is None
+
+    same = booking_node({**booked, "messages": [{"role": "user", "content": "thanks!"}]})
+    assert same["booking_ref"] == "#REV-ABC123"

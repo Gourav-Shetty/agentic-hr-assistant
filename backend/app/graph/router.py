@@ -85,6 +85,15 @@ def route_intent(text: str, stage: str = "idle") -> str:
         if has_faq and not has_booking and not time_like:
             return "mixed"
         return "booking"
+    if stage == "done":
+        # Booked already: questions (esp. FAQ-flavored) go to knowledge;
+        # fresh booking verbs restart the flow; anything else gets the summary.
+        is_question = "?" in t or t.startswith(("what ", "how ", "why ", "when ", "where ", "which ", "is ", "are ", "can ", "do "))
+        if (has_faq or is_question) and not slot_like and "@" not in t:
+            return "faq"
+        if has_booking:
+            return "booking"
+        return "booking"
     # idle/done: explicit slot/email/name clicks start booking even without verbs
     if slot_like or "@" in t or name_like:
         # pure slot/email/name with no FAQ -> booking; FAQ + slot ambiguous -> mixed to answer FAQ first

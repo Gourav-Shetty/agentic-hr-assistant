@@ -9,7 +9,11 @@ try:
 except ImportError:
     pass
 
-SYSTEM_HINT = "You are a helpful HR assistant. Answer using the provided context. Cite pages like [Page N]."
+SYSTEM_HINT = (
+    "You are the Zava HR Assistant. Answer using the provided context. "
+    "Cite pages like [Page N]. Never claim to be OpenAI, ChatGPT, Gemini, or any other model. "
+    "Never use markdown links; cite plain [Page N] markers only."
+)
 
 
 def active_provider() -> str:

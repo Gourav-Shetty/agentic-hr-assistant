@@ -1,5 +1,5 @@
 {
-  "thread_id": "demo-1d6fa0",
+  "thread_id": "demo-415565",
   "turns": [
     {
       "reply": "Sure, let's book your performance review. What is your full name?",
@@ -11,14 +11,14 @@
         "slot": null,
         "reference": null
       },
-      "thread_id": "demo-1d6fa0"
+      "thread_id": "demo-415565"
     },
     {
-      "reply": "Based on the handbook: [Page 4] 7. Accountability: We take responsibility for our actions and hold ourselves and others\n\nReturning to your booking \u2014 Which slot works for you? Options: Tomorrow 11AM, Tomorrow 3PM, Friday 10:30AM IST",
+      "reply": "Performance reviews at Zava are conducted **annually**\u202f[Page\u202f4].\n\nReturning to your booking \u2014 Which slot works for you? Options: Tomorrow 11AM, Tomorrow 3PM, Friday 10:30AM IST",
       "route": "mixed",
       "citations": [
         4,
-        8
+        56
       ],
       "booking": {
         "name": "Alex Chen",
@@ -26,22 +26,22 @@
         "slot": null,
         "reference": null
       },
-      "thread_id": "demo-1d6fa0"
+      "thread_id": "demo-415565"
     },
     {
-      "reply": "Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Your reference is #REV-8RCV.",
+      "reply": "Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Your reference is #REV-8MVI.",
       "route": "booking",
       "citations": [
         4,
-        8
+        56
       ],
       "booking": {
         "name": "Alex Chen",
         "email": "alex.chen@example.com",
         "slot": "Friday 10:30AM IST",
-        "reference": "#REV-8RCV"
+        "reference": "#REV-8MVI"
       },
-      "thread_id": "demo-1d6fa0"
+      "thread_id": "demo-415565"
     }
   ]
 }

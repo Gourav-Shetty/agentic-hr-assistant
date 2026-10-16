@@ -17,12 +17,12 @@ User:  Hi, I need to book a 1-on-1 Performance Review session.
 Agent [booking]: Sure, let's book your performance review. What is your full name?
 
 User:  Alex Chen (alex.chen@example.com). Wait, before that, how often are performance reviews conducted?
-Agent [mixed, citations=[4,8]]: Based on the handbook: [Page 4] ... Performance reviews are conducted annually ...
+Agent [mixed, citations=[4]]: Performance reviews at Zava are conducted **annually** [Page 4].
         Returning to your booking — Which slot works for you? Options: Tomorrow 11AM, Tomorrow 3PM, Friday 10:30AM IST
         booking={name: Alex Chen, email: alex.chen@example.com}
 
 User:  Friday at 10:30 AM
-Agent [booking]: Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Reference #REV-8RCV.
+Agent [booking]: Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Reference #REV-8MVI.
 ```
 
 Full JSON: `docs/demo_transcript.json`. Verification log: `docs/verify_log.txt` (14/14 PASS).

@@ -25,10 +25,10 @@ User:  Friday at 10:30 AM
 Agent [booking, stage=booking_confirm]: Lock it in: Friday 10:30AM IST for Alex Chen (alex.chen@example.com)? Reply Yes to confirm or No to pick another slot.
 
 User:  Yes, confirm
-Agent [booking, stage=done]: Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Reference #REV-BYJ48B.
+Agent [booking, stage=done]: Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Reference #REV-YWKY5B.
 ```
 
-Full JSON: `docs/demo_transcript.json`. Verification log: `docs/verify_log.txt` (14/14 PASS).
+Full JSON: `docs/demo_transcript.json` (thread `demo-f97ff9`, regenerated live). Verification log: `docs/verify_log.txt` (18/18 PASS).
 
 ## Architecture
 

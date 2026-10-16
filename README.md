@@ -2,7 +2,7 @@
 
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-async-green) ![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-purple) ![React](https://img.shields.io/badge/React-Vite-61dafb) ![Docker](https://img.shields.io/badge/docker-compose-ready-blue)
 
-Autonomous conversational assistant with **dual responsibility**: Domain Knowledge Retrieval (RAG over `employee_handbook.pdf`) + Transactional Booking (multi-turn Performance Review scheduling). Preserves state across turns by `thread_id`, answers FAQ mid-booking and resumes without losing parameters.
+Autonomous conversational assistant with **dual responsibility**: Domain Knowledge Retrieval (RAG over `employee_handbook.pdf` + `Northwind_Standard_Benefits_Details.pdf`) + Transactional Booking (multi-turn Performance Review scheduling). Preserves state across turns by `thread_id`, answers FAQ mid-booking and resumes without losing parameters.
 
 > Runs **offline without API keys** (rule-based + TF-IDF fallback). Add Groq/Gemini keys for fluent LLM answers.
 
@@ -54,13 +54,13 @@ Router (`router.py`): keywords first, LLM-free. Active booking defaults to `book
 RAG (`rag/`): `pypdf` per-page parse → 800/150 splitter → `all-MiniLM-L6-v2` → Chroma persistent `./data/chroma` (page+source metadata). Fallbacks: `data/chunks.json` TF-IDF → keyword overlap. Always `[{text, page, source}]`.
 Knowledge base is dual-PDF: `employee_handbook.pdf` (source=`handbook`, policies + Page-4 performance reviews) + `Northwind_Standard_Benefits_Details.pdf` (source=`benefits`, PTO/leave/health). Context cites `[Page N]` or `[Page N (benefits)]`.
 
-LLM (`graph/llm.py`): Groq `llama-3.3-70b-versatile` → Gemini `gemini-2.0-flash` → rule fallback. Guardrails (`guardrails.py`): injection blocklist enforced in `/api/chat` + `/stream`, email regex, slot allowlist, 2000-char cap.
+LLM (`graph/llm.py`): Groq `openai/gpt-oss-20b` (default) → Gemini `gemini-2.0-flash` → rule fallback. `.env` autoloaded; deprecated Llama IDs auto-map to `gpt-oss-20b` (Groq retired Llama free-tier Aug 2026). Guardrails (`guardrails.py`): injection blocklist enforced in `/api/chat` + `/stream`, email regex, slot allowlist, 2000-char cap.
 
 ## Quickstart
 
 ```bash
 pip install -r backend/requirements.txt
-cp .env.example .env   # optional: add GROQ_API_KEY / GEMINI_API_KEY, no quotes
+cp .env.example .env   # Windows: copy .env.example .env — add GROQ_API_KEY / GEMINI_API_KEY, no quotes
 python scripts/download_pdf.py          # handbook + benefits PDFs
 python -m backend.app.rag.ingest --all  # 448 chunks (27 handbook + 421 benefits)
 uvicorn backend.app.main:app --port 8000
@@ -88,15 +88,16 @@ Frontend (`frontend/src`): `api.js` SSE parser, `App.jsx` thread copy/new + stat
 ## Verification
 
 ```bash
-pytest tests/ -v          # 9 passed — router, booking validation, RAG pages
-python scripts/verify.py  # OK — slots, Page-4 cite, booking, mixed resume, SSE, reset
-npm run build             # vite build success (frontend/)
+pytest tests/ -v                    # 9 passed, 2 skipped — router, booking validation, RAG pages
+python scripts/verify.py            # OK — slots, Page-4 cite, booking, mixed resume, SSE, reset
+python scripts/security_audit.py    # OK — 70+ adversarial checks (injection, fuzz, flood, isolation)
+npm run build                       # vite build success (frontend/)
 ```
 
 ```
 [PASS] RAG answer cites Page 4 (citations=[4, 3])
 [PASS] booking asks for name / email / slot
-[PASS] booking completes with ref #REV-9BXE
+[PASS] booking completes with ref #REV-2R6WUP (6-char CSPRNG)
 [PASS] FAQ interrupt answered mid-booking (route=mixed)
 [PASS] booking resumes after interrupt (name kept)
 [PASS] SSE stream emits node/token/done events
@@ -123,15 +124,18 @@ Tools: Copilot, Cursor, Claude, ChatGPT.
 1. **Checkpointer serialization** — AI put Pydantic models in `AgentState`; `SqliteSaver` checkpoint writes failed on resume. Diagnosed via `graph.get_state` pickle error. Fix: `TypedDict` primitives only, Pydantic at boundary.
 2. **Blocking SSE** — AI called `graph.invoke` directly in async SSE generator, stalling streams. Diagnosed via concurrent stream timeout. Fix: `await asyncio.to_thread(graph.invoke…)` + `await asyncio.sleep(0)` yields in `api/chat.py`.
 3. **Chroma Windows + offline** — AI assumed `chromadb` + OpenAI embeddings always available; builds fail offline. Diagnosed via `ImportError` on clean Windows. Fix: layered retriever Chroma → stdlib TF-IDF → keyword, local `all-MiniLM` only, `chunks.json` always written.
-4. **Router amnesia** — AI returned `mixed` for `book + performance review`, dropping booking start; slot texts (`Friday 10:30AM`) had no booking keywords → `greeting`. Diagnosed via `verify.py` + TestClient transcript. Fix: booking verbs win idle, slot/email clicks → `booking`, active FAQ-only → `mixed`, bare-name extraction only with email present, FAQ+booking replies merged with `Returning to your booking —` prefix preserving citations.
+4. **Router amnesia + bare names** — AI returned `mixed` for `book + performance review`, dropping booking start; slot texts (`Friday 10:30AM`) had no booking keywords → `greeting`; bare `Gourav Shetty` replies extracted nothing → infinite name loop. Diagnosed via `verify.py` + TestClient transcripts. Fix: booking verbs win idle, slot/email clicks → `booking`, active FAQ-only → `mixed`; bare 1–3 capitalized words accepted as names (email-present or standalone, never from sentences); FAQ+booking replies merged with `Returning to your booking —` prefix preserving citations; greetings/gibberish mid-booking get contextual nudges (`holding Tomorrow 11AM`) instead of repeated prompts.
+5. **Dead Groq model + unloaded `.env`** — AI defaulted to `llama-3.3-70b-versatile`; Groq retired it Aug 2026 → every call 404 `model_not_found` and the app silently ran rule-based fallback despite keys set (`llm.py` never called `load_dotenv`). Diagnosed by invoking the model directly and surfacing the hidden exception. Fix: default `openai/gpt-oss-20b`, deprecated-ID map, `load_dotenv()` in `llm.py`, `active_provider()` status helper.
+6. **Fake Sources on refusals** — retriever force-returned `chunks[:k]` with zero signal, so out-of-scope answers (code requests, missing PTO text) carried `Sources (3)` for pages that don't support the answer. Diagnosed from UI transcript. Fix: return `[]` on no signal, out-of-scope short-circuit with `citations=[]`, PTO acronym expansion, strip citations when the LLM disavows its own context.
+7. **Shadowed `_tid` + weak refs** — a duplicated `_tid` def meant the 128-char thread cap never ran (adversarial audit caught it: 10KB IDs stored); refs used `random` 4-char. Fix: removed shadow def, 6-char `secrets` refs, 100/min rate limiting with 429s, 50-turn history cap, key/path redaction in 500s — all covered by `scripts/security_audit.py` (70+ checks).
 
 ## Structure
 
 ```
 backend/app/{main.py,config.py,schemas.py,graph/{state,router,nodes,graph,llm,guardrails},rag/{ingest,retriever},tools/booking,api/{chat,slots}}
 frontend/src/{App.jsx,api.js,components/Chat.jsx}
-scripts/{download_pdf.py,verify.py,make_diagrams.py,make_screenshot.py}
-tests/test_{router,booking,rag}.py  docs/{architecture.png,state_diagram.png,screenshot_chat.png,demo_transcript.json,verify_log.txt}
+scripts/{download_pdf.py,verify.py,security_audit.py,make_diagrams.py,make_screenshot.py}
+tests/test_{router,booking,rag}.py  docs/{architecture.png,state_diagram.png,screenshot_ui.png,demo_transcript.json,verify_log.txt,security_audit_log.txt}
 ```
 
 ## Submission

@@ -192,7 +192,16 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
     except Exception:
         reply = f"Based on the handbook: {context[:500]}" if context else "I couldn't find that in the handbook."
     low = reply.lower().replace("\u2019", "'").replace("\u2018", "'")
-    if ("sorry" in low or "couldn't find" in low or "could not find" in low) and ("don't contain" in low or "do not contain" in low or "does not include" in low or "no information" in low or "no details" in low):
+    if (
+        "couldn't find" in low
+        or "could not find" in low
+        or "don't have information" in low
+        or "do not have information" in low
+        or (
+            ("sorry" in low or "couldn't find" in low or "could not find" in low)
+            and ("don't contain" in low or "do not contain" in low or "does not include" in low or "no information" in low or "no details" in low)
+        )
+    ):
         citations = []
     if not citations and context:
         reply = reply  # no pages found; leave reply as-is

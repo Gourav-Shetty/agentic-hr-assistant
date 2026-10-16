@@ -91,6 +91,22 @@ def test_booking_node_drops_stale_citations():
     assert out["citations"] == []
 
 
+def test_rag_node_strips_citations_on_denial():
+    from backend.app.graph.nodes import rag_node
+
+    docs = [{"text": "unrelated chunk", "page": 21, "source": "benefits"}]
+    state = {
+        "messages": [{"role": "user", "content": "pto"}],
+        "stage": "idle", "booking_pending": False,
+        "citations": [], "just_answered_faq": False,
+    }
+    out = rag_node(dict(state),
+                   retriever_fn=lambda q: docs,
+                   llm_fn=lambda q, c: "I couldn't find any information about PTO in the context.")
+    assert out["citations"] == []
+    assert "couldn't find" in out["messages"][-1]["content"]
+
+
 def test_booking_node_keeps_citations_on_mixed_resume():
     from backend.app.graph.nodes import booking_node
 

@@ -48,6 +48,18 @@ def extract_name_email(text: str) -> dict:
         cap = [w for w in words if w and w[0].isupper() and w.isalpha() and len(w) > 1]
         if 2 <= len(cap) <= 3 and len(words) <= 5:
             result["name"] = " ".join(cap)
+    if not result["name"] and not m:
+        # Bare name alone ("Gourav Shetty") when asked for full name:
+        # accept 1-3 capitalized words, reject sentences/questions/slots/emails.
+        t = text.strip().strip(".,;)")
+        low = t.lower()
+        banned = ("book", "schedule", "slot", "tomorrow", "friday", "morning", "afternoon",
+                  "review", "performance", "pto", "leave", "policy", "benefit", "handbook",
+                  "hello", "hi", "hey", "thanks", "bye", "@", "?", "http")
+        if not any(b in low for b in banned) and not any(ch.isdigit() for ch in t):
+            words = [w.strip(" .()'") for w in t.split() if w.strip(" .()'")]
+            if 1 <= len(words) <= 3 and all(w and w[0].isupper() and w.isalpha() and len(w) > 1 for w in words):
+                result["name"] = " ".join(words)
     return result
 
 

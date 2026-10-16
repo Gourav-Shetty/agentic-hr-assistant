@@ -1,7 +1,7 @@
 """Booking tool: fixed slots, name/email/slot extraction, reference gen."""
 
-import random
 import re
+import secrets
 import string
 
 SLOTS = [
@@ -89,6 +89,6 @@ def match_slot(text: str) -> str | None:
 
 
 def generate_ref() -> str:
-    """Return booking reference like #REV-XXXX (uppercase alnum)."""
-    suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    """Return booking reference like #REV-XXXX (CSPRNG, unguessable)."""
+    suffix = "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
     return f"#REV-{suffix}"

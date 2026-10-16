@@ -3,8 +3,11 @@
 import asyncio
 import json
 import os
+import re
 import sqlite3
+import time
 import uuid
+from collections import defaultdict, deque
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -16,6 +19,41 @@ from backend.app.schemas import BookingInfo, ChatRequest, ChatResponse
 router = APIRouter(prefix="/api", tags=["chat"])
 
 _graph = None
+
+# ---- Abuse guards (in-memory, per-process; demo-grade, no extra deps) ----
+RATE_LIMIT = int(os.getenv("RATE_LIMIT_PER_MIN", "100"))  # chat POSTs per IP/min
+RATE_WINDOW = 60.0
+MAX_TID_LEN = 128
+MAX_HISTORY = 50  # replay only recent turns into the graph
+_hits: dict[str, deque] = defaultdict(deque)
+
+_KEY_RE = re.compile(r"(gsk_[A-Za-z0-9]+|AIza[A-Za-z0-9_-]+|AQ\.[A-Za-z0-9_.-]+)")
+
+
+def _client_ip() -> str:
+    return "local"  # TestClient/single-process demo; extend with Request.client in prod
+
+
+def _check_rate() -> bool:
+    now = time.monotonic()
+    q = _hits[_client_ip()]
+    while q and now - q[0] > RATE_WINDOW:
+        q.popleft()
+    if len(q) >= RATE_LIMIT:
+        return False
+    q.append(now)
+    return True
+
+
+def _limited():
+    return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Slow down."})
+
+
+def _tid(raw: str | None) -> str:
+    cleaned = (raw or "").strip()
+    if not cleaned or len(cleaned) > MAX_TID_LEN:
+        return str(uuid.uuid4())
+    return cleaned
 
 
 class ResetRequest(BaseModel):
@@ -34,9 +72,6 @@ def _db_path() -> str:
 
 def _config(thread_id: str) -> dict:
     return {"configurable": {"thread_id": thread_id}}
-
-def _tid(raw: str | None) -> str:
-    return (raw or "").strip() or str(uuid.uuid4())
 
 async def _run(graph, message: str, thread_id: str):
     """Invoke graph with full history appended (messages has no reducer)."""
@@ -90,7 +125,8 @@ def get_graph():
 def _history(graph, config: dict) -> list:
     try:
         vals = getattr(graph.get_state(config), "values", None) or {}
-        return [m for m in (vals.get("messages") or []) if isinstance(m, dict)]
+        msgs = [m for m in (vals.get("messages") or []) if isinstance(m, dict)]
+        return msgs[-MAX_HISTORY:]
     except Exception:
         return []
 
@@ -121,12 +157,17 @@ def _chunks(text: str, size: int = 24) -> list:
 
 
 def _err(exc: Exception) -> JSONResponse:
-    return JSONResponse(status_code=500, content={"detail": f"{type(exc).__name__}: {exc}"})
+    detail = f"{type(exc).__name__}: {exc}"
+    detail = _KEY_RE.sub("[REDACTED_KEY]", detail)  # never echo key-like strings
+    detail = detail.replace(str(_repo_root()), "[ROOT]")  # no absolute paths
+    return JSONResponse(status_code=500, content={"detail": detail[:500]})
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     try:
+        if not _check_rate():
+            return _limited()
         from backend.app.graph.guardrails import is_injection
 
         if is_injection(req.message or ""):
@@ -147,6 +188,8 @@ async def chat(req: ChatRequest):
 @router.post("/chat/stream")
 async def chat_stream(req: ChatRequest):
     try:
+        if not _check_rate():
+            return _limited()
         from backend.app.graph.guardrails import is_injection
 
         if is_injection(req.message or ""):

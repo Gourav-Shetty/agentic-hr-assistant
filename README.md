@@ -81,7 +81,7 @@ Docker: `docker-compose up --build` → backend `:8000`, frontend `:5173`.
 | GET | `/api/slots` | `{slots: [Tomorrow 11AM, Tomorrow 3PM, Friday 10:30AM IST]}` |
 | POST | `/api/reset` `{thread_id}` | `{thread_id, status: reset}` |
 
-`route` drives UI badge: `Router → FAQ RAG / Booking / Mixed`. `citations` renders `[Page N]`. `booking.reference` like `#REV-XXXX` on `done`.
+`route` drives UI badge: `Router → FAQ RAG / Booking / Mixed`. `citations` renders `[Page N]`. `booking.reference` like `#REV-XXXXXX` (6-char CSPRNG) on `done`.
 
 Frontend (`frontend/src`): `api.js` SSE parser, `App.jsx` thread copy/new + status dot, `Chat.jsx` slot buttons, citation `<details>`, booking card, empty/typing/error states, aria-live, mobile-first.
 
@@ -104,6 +104,17 @@ verify: OK
 ```
 
 Manual: book via slot button on fresh thread, interrupt with PTO question mid-booking, restart backend — same `thread_id` history persists via `data/checkpoints.db`.
+
+## Security
+
+Adversarial audit: `python scripts/security_audit.py` — 70+ checks, all passing (log: `docs/security_audit_log.txt`).
+
+Covered: 10 prompt-injection payloads (blocked pre-LLM), 3 live-LLM system-leak probes (Groq `gpt-oss-20b`, no leak), XSS/SQLi/traversal fuzz, evil `thread_id`s, cross-thread isolation, invalid-email/fake-slot rejection, 20-parallel flood, empty-message 422.
+
+Hardening in place (`backend/app/api/chat.py`, `backend/app/tools/booking.py`):
+- Rate limiting (100 chat POSTs/IP/min → 429), overlong `thread_id` (>128) minted fresh, history replay capped at 50 turns
+- Booking refs are 6-char CSPRNG (`secrets`, 2B combos), 500 errors redact key-like strings and absolute paths
+- Accepted risks (demo, no auth): thread IDs are unguessable UUIDs; `POST /api/reset` and CORS `*` are open by design for local eval.
 
 ## AI Engineering Log
 

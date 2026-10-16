@@ -40,7 +40,10 @@ def route_intent(text: str, stage: str = "idle") -> str:
 
     active = stage not in ACTIVE_STAGES
     if active:
-        if has_faq and not has_booking and not slot_like and not name_like and "@" not in t:
+        # Pure FAQ interrupt -> mixed (answer FAQ, then resume). Slot-time answers stay booking.
+        # Email + FAQ together is still mixed so FAQ gets answered; booking_node extracts email after.
+        time_like = any(k in t for k in ["tomorrow", "friday", "10:30", "11am", "3pm", "11 am", "3 pm", "morning", "afternoon"])
+        if has_faq and not has_booking and not time_like:
             return "mixed"
         return "booking"
     # idle/done: explicit slot/email/name clicks start booking even without verbs

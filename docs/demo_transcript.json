@@ -1,0 +1,47 @@
+{
+  "thread_id": "demo-1d6fa0",
+  "turns": [
+    {
+      "reply": "Sure, let's book your performance review. What is your full name?",
+      "route": "booking",
+      "citations": [],
+      "booking": {
+        "name": null,
+        "email": null,
+        "slot": null,
+        "reference": null
+      },
+      "thread_id": "demo-1d6fa0"
+    },
+    {
+      "reply": "Based on the handbook: [Page 4] 7. Accountability: We take responsibility for our actions and hold ourselves and others\n\nReturning to your booking \u2014 Which slot works for you? Options: Tomorrow 11AM, Tomorrow 3PM, Friday 10:30AM IST",
+      "route": "mixed",
+      "citations": [
+        4,
+        8
+      ],
+      "booking": {
+        "name": "Alex Chen",
+        "email": "alex.chen@example.com",
+        "slot": null,
+        "reference": null
+      },
+      "thread_id": "demo-1d6fa0"
+    },
+    {
+      "reply": "Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Your reference is #REV-8RCV.",
+      "route": "booking",
+      "citations": [
+        4,
+        8
+      ],
+      "booking": {
+        "name": "Alex Chen",
+        "email": "alex.chen@example.com",
+        "slot": "Friday 10:30AM IST",
+        "reference": "#REV-8RCV"
+      },
+      "thread_id": "demo-1d6fa0"
+    }
+  ]
+}

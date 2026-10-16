@@ -88,8 +88,17 @@ def booking_node(state: dict, llm_fn=None) -> dict:
         "slot": slot,
         "booking_pending": True,
         "last_route": "booking",
-        "citations": [],
+        "citations": list(state.get("citations") or []),
     }
+
+    # If we just answered an FAQ (rag ran first in mixed flow), prepend that answer
+    # so the user sees FAQ + booking resume in one turn.
+    prefix = ""
+    msgs = state.get("messages", []) or []
+    if msgs and isinstance(msgs[-1], dict) and msgs[-1].get("role") == "assistant":
+        prev = str(msgs[-1].get("content", ""))
+        if "[Page" in prev and len(prev) > 20:
+            prefix = prev + "\n\nReturning to your booking — "
 
     if not name:
         reply = "Sure, let's book your performance review. What is your full name?"
@@ -109,9 +118,13 @@ def booking_node(state: dict, llm_fn=None) -> dict:
         )
         update["stage"] = "done"
         update["booking_pending"] = False
-        update["messages"] = _append(state, "assistant", reply)
+        update["messages"] = _append(state, "assistant", prefix + reply if prefix else reply)
         update["booking_ref"] = ref
+        if prefix:
+            update["last_route"] = "mixed"
         return update
 
-    update["messages"] = _append(state, "assistant", reply)
+    update["messages"] = _append(state, "assistant", prefix + reply if prefix else reply)
+    if prefix:
+        update["last_route"] = "mixed"
     return update

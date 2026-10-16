@@ -37,6 +37,17 @@ def extract_name_email(text: str) -> dict:
             if name:
                 result["name"] = name
             break
+    if not result["name"] and m:
+        # Bare "Alex Chen alex@x.com" only when email present in same message.
+        # Never guess from booking sentences like "Hi, I need to book...".
+        before = text[: m.start()] if m else text
+        before = re.sub(r"[(,;]+", " ", before).strip()
+        # drop FAQ tail ("wait before that how often ...")
+        before = re.split(r"\.\s*|\bwait\b|\bbefore\b|\bhow\b|\bwhat\b|\bwhen\b", before, flags=re.IGNORECASE)[0]
+        words = [w.strip(" .()'") for w in before.split() if w.strip(" .()'")]
+        cap = [w for w in words if w and w[0].isupper() and w.isalpha() and len(w) > 1]
+        if 2 <= len(cap) <= 3 and len(words) <= 5:
+            result["name"] = " ".join(cap)
     return result
 
 

@@ -30,6 +30,8 @@ Agent [booking, stage=done]: Done! Booked your performance review Friday 10:30AM
 
 Full JSON: `docs/demo_transcript.json` (thread `demo-f97ff9`, regenerated live). Verification log: `docs/verify_log.txt` (18/18 PASS).
 
+**Spec-conformance notes.** (1) The sample dialogue says reviews happen *"twice a year"*, but the actual handbook PDF (Page 4) says reviews are conducted **annually** — the agent faithfully reports the document (`annually [Page 4]`), which is the correct RAG behavior. (2) The sample books immediately on slot choice; this agent does the same for affirmed picks (`Let's go with Friday…`), and asks one explicit `Yes/No` confirm for bare slot clicks (human-in-the-loop). (3) Slots match the spec: Tomorrow 11AM / Tomorrow 3PM / Friday 10:30AM IST; refs are `#REV-XXXXXX` (6-char vs the sample's 4-char format).
+
 ## Architecture
 
 ![Architecture](docs/architecture.png)

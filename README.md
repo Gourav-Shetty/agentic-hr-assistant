@@ -99,7 +99,7 @@ Frontend (`frontend/src`): `api.js` SSE parser, `App.jsx` thread copy/new + stat
 ## Verification
 
 ```bash
-pytest tests/ -v                    # 9 passed, 2 skipped — router, booking validation, RAG pages
+pytest tests/ -v                    # 30 passed — router, booking validation, RAG pages
 python scripts/verify.py            # OK — slots, Page-4 cite, booking, mixed resume, SSE, reset
 python scripts/security_audit.py    # OK — 70+ adversarial checks (injection, fuzz, flood, isolation)
 npm run build                       # vite build success (frontend/)

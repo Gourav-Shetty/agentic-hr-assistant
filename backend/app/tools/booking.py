@@ -60,6 +60,31 @@ def extract_name_email(text: str) -> dict:
             words = [w.strip(" .()'") for w in t.split() if w.strip(" .()'")]
             if 1 <= len(words) <= 3 and all(w and w[0].isupper() and w.isalpha() and len(w) > 1 for w in words):
                 result["name"] = " ".join(words)
+    if not result["name"]:
+        # Leading name before an interrupt ("Gourav but before that, ...?"):
+        # take the leading run of capitalized words, reject sentences.
+        head = re.split(r"\b(but|before|wait|and)\b", text.strip(), flags=re.IGNORECASE)[0]
+        words = [w.strip(" .()'") for w in head.split() if w.strip(" .()'")]
+        if (
+            words
+            and not any(ch.isdigit() for ch in head)
+            and words[0].lower() not in {
+                "what", "when", "where", "which", "how", "why", "is", "are",
+                "can", "do", "does", "hi", "hello", "hey", "thanks",
+            }
+        ):
+            run: list[str] = []
+            for w in words:
+                if w and w[0].isupper() and w.isalpha() and len(w) > 1:
+                    run.append(w)
+                else:
+                    break
+            rest = " ".join(words[len(run):]).lower()
+            if 1 <= len(run) <= 3 and not any(
+                b in rest for b in ("book", "schedule", "slot", "tomorrow", "friday",
+                                    "morning", "afternoon", "@", "http")
+            ):
+                result["name"] = " ".join(run)
     return result
 
 

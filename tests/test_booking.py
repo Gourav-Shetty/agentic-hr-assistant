@@ -62,3 +62,49 @@ def test_generate_ref_format():
 
 def test_slots_lists_three_bookable_options():
     assert SLOTS == ["Tomorrow 11AM", "Tomorrow 3PM", "Friday 10:30AM IST"]
+
+
+def test_extract_leading_name_before_interrupt():
+    info = extract_name_email("Gourav but before that may i know all the benefits")
+    assert info["name"] == "Gourav"
+    assert info["email"] is None
+
+
+def test_extract_question_is_not_a_name():
+    assert extract_name_email("What time is it")["name"] is None
+    assert extract_name_email("Tomorrow 3PM")["name"] is None
+    assert extract_name_email("Friday at 10:30 AM")["name"] is None
+
+
+def test_booking_node_drops_stale_citations():
+    from backend.app.graph.nodes import booking_node
+
+    state = {
+        "messages": [{"role": "user", "content": "Gourav Shetty"}],
+        "name": None, "email": None, "slot": None,
+        "stage": "booking_name", "booking_pending": True,
+        "last_route": "", "citations": [4, 8],
+        "just_answered_faq": False, "booking_ref": None,
+    }
+    out = booking_node(dict(state))
+    assert out["name"] == "Gourav Shetty"
+    assert out["citations"] == []
+
+
+def test_booking_node_keeps_citations_on_mixed_resume():
+    from backend.app.graph.nodes import booking_node
+
+    state = {
+        "messages": [
+            {"role": "user", "content": "Alex Chen alex.chen@example.com, how often are reviews?"},
+            {"role": "assistant", "content": "Reviews are annual [Page 4]."},
+        ],
+        "name": None, "email": None, "slot": None,
+        "stage": "booking_name", "booking_pending": True,
+        "last_route": "mixed", "citations": [4],
+        "just_answered_faq": True, "booking_ref": None,
+    }
+    out = booking_node(dict(state))
+    assert out["name"] == "Alex Chen"
+    assert out["citations"] == [4]
+    assert "Returning to your booking" in out["messages"][-1]["content"]

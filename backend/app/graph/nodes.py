@@ -1,6 +1,7 @@
 """Graph nodes: RAG answering + multi-turn booking with interrupt-resume."""
 
 from .guardrails import sanitize, validate_email
+from .router import normalize_query
 from backend.app.tools.booking import SLOTS, extract_name_email, generate_ref, match_slot
 
 import re
@@ -84,7 +85,7 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
     """Answer HR question with citations. Preserves booking progress."""
     from .llm import generate as default_generate
 
-    query = sanitize(_last_user_text(state))
+    query = normalize_query(sanitize(_last_user_text(state)))
     # Greeting short-circuit: no retrieval, no LLM waste
     tl = query.lower().strip()
     if tl in {"hi", "hello", "hey", "thanks", "thank you", "bye"} or (
@@ -200,17 +201,19 @@ def booking_node(state: dict, llm_fn=None) -> dict:
         "slot": slot,
         "booking_pending": True,
         "last_route": "booking",
-        "citations": list(state.get("citations") or []),
+        "citations": [],  # stale RAG pages must not leak onto booking prompts
     }
 
     # Mixed flow: rag just answered an FAQ this turn (flag), so prepend that
     # answer and resume booking in one message. Flag is consumed here.
+    # Only then are the rag citations relevant to this turn.
     prefix = ""
     msgs = state.get("messages", []) or []
     if state.get("just_answered_faq") and msgs and isinstance(msgs[-1], dict) and msgs[-1].get("role") == "assistant":
         prev = str(msgs[-1].get("content", "")).strip()
         if prev:
             prefix = prev + "\n\nReturning to your booking — "
+            update["citations"] = list(state.get("citations") or [])
     update["just_answered_faq"] = False
 
     tl = text.lower().strip()

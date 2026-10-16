@@ -77,3 +77,20 @@ def test_mixed_faq_interrupt_keeps_booking_context(router_fn):
         "What is the PTO policy? Also I still want to book my performance review.",
     )
     assert any(tok in label for tok in (_MIXED_LABELS | _FAQ_LABELS | _BOOKING_LABELS)), label
+
+
+def test_typo_benefits_routes_to_knowledge(router_fn):
+    label = _route(router_fn, "may i know all the benegits")
+    assert any(tok in label for tok in _FAQ_LABELS), label
+
+
+def test_interview_routes_to_booking(router_fn):
+    label = _route(router_fn, "can i book an interview please")
+    assert any(tok in label for tok in _BOOKING_LABELS), label
+
+
+def test_normalize_query_fixes_typos():
+    from backend.app.graph.router import normalize_query
+
+    assert normalize_query("all the benegits") == "all the benefits"
+    assert normalize_query("book a reveiw") == "book a review"

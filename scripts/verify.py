@@ -82,8 +82,27 @@ def check_api() -> None:
         r3 = _post(client, b, "ada@example.com")
         log("slot" in r3["reply"].lower() or "tomorrow" in r3["reply"].lower(), "booking asks for slot")
         r4 = _post(client, b, "Friday 10:30AM IST")
-        ref = ((r4.get("booking") or {}).get("reference")) or ""
-        log(ref.startswith("#REV-") and "#REV-" in r4["reply"], f"booking completes with ref {ref}")
+        log("lock it in" in r4["reply"].lower() and r4.get("stage") == "booking_confirm",
+            f"booking asks to confirm (stage={r4.get('stage')})")
+        # Human-in-the-loop says no once: slot released, alternatives offered.
+        r4no = _post(client, b + "-no", "I want to book a performance review")
+        _post(client, b + "-no", "No Casio")
+        _post(client, b + "-no", "nocasio@example.com")
+        held = _post(client, b + "-no", "Tomorrow 11AM")
+        deny = _post(client, b + "-no", "No, pick another slot")
+        log(deny.get("booking", {}).get("slot") is None and deny.get("stage") == "booking_slot",
+            "confirm-no releases slot")
+        r5 = _post(client, b, "Yes, confirm it")
+        ref = ((r5.get("booking") or {}).get("reference")) or ""
+        log(ref.startswith("#REV-") and "#REV-" in r5["reply"], f"booking completes with ref {ref}")
+        # Sample-dialogue phrasing ("Let's go with ...") confirms immediately, no extra turn.
+        f = f"fast-{uuid.uuid4().hex[:8]}"
+        _post(client, f, "I want to book a performance review")
+        _post(client, f, "My name is Fay Lin")
+        _post(client, f, "fay@example.com")
+        fast = _post(client, f, "Let's go with Friday at 10:30 AM")
+        log(((fast.get("booking") or {}).get("reference") or "").startswith("#REV-"),
+            "affirmed slot books immediately")
 
         m = f"mixed-{uuid.uuid4().hex[:8]}"
         _post(client, m, "I want to book a performance review")
@@ -93,7 +112,9 @@ def check_api() -> None:
         cont = _post(client, m, "bob@example.com")
         log("slot" in cont["reply"].lower() or "tomorrow" in cont["reply"].lower(), "booking resumes after interrupt (name kept)")
         done = _post(client, m, "Tomorrow 3PM")
-        dref = ((done.get("booking") or {}).get("reference")) or ""
+        log(done.get("stage") == "booking_confirm", "interrupted booking reaches confirm")
+        final = _post(client, m, "yes")
+        dref = ((final.get("booking") or {}).get("reference")) or ""
         log(dref.startswith("#REV-"), f"interrupted booking completes with ref {dref}")
 
         s = client.post("/api/chat/stream", json={"thread_id": t, "message": "hello"})

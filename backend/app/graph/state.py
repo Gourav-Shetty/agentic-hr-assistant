@@ -11,6 +11,8 @@ class AgentState(TypedDict, total=False):
     stage: str
     booking_pending: bool
     last_route: str
+    next_step: str
+    just_answered_faq: bool
     citations: list
     booking_ref: str | None
 
@@ -24,6 +26,8 @@ def default_state() -> AgentState:
         "stage": "idle",
         "booking_pending": False,
         "last_route": "",
+        "next_step": "",
+        "just_answered_faq": False,
         "citations": [],
         "booking_ref": None,
     }

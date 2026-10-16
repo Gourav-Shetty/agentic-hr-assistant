@@ -21,3 +21,4 @@ class ChatResponse(BaseModel):
     citations: list = Field(default_factory=list)
     booking: BookingInfo | None = None
     thread_id: str
+    stage: str = Field(default="idle", description="Booking progress: idle|booking_name|booking_email|booking_slot|booking_confirm|done")

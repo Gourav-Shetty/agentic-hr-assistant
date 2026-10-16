@@ -1,6 +1,6 @@
 # Agentic HR Assistant — Full-Stack LangGraph RAG + Booking
 
-![Python 3.11](https://img.shields.io/badge/python-3.11-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-async-green) ![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-purple) ![React](https://img.shields.io/badge/React-Vite-61dafb) ![Docker](https://img.shields.io/badge/docker-compose-ready-blue)
+![Python 3.11](https://img.shields.io/badge/python-3.11-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-async-green) ![LangGraph](https://img.shields.io/badge/LangGraph-supervisor-purple) ![React](https://img.shields.io/badge/React-Vite-61dafb) ![Docker](https://img.shields.io/badge/docker-compose-ready-blue) ![CI](https://github.com/Gourav-Shetty/agentic-hr-assistant/actions/workflows/ci.yml/badge.svg)
 
 Autonomous conversational assistant with **dual responsibility**: Domain Knowledge Retrieval (RAG over `employee_handbook.pdf` + `Northwind_Standard_Benefits_Details.pdf`) + Transactional Booking (multi-turn Performance Review scheduling). Preserves state across turns by `thread_id`, answers FAQ mid-booking and resumes without losing parameters.
 
@@ -22,7 +22,10 @@ Agent [mixed, citations=[4]]: Performance reviews at Zava are conducted **annual
         booking={name: Alex Chen, email: alex.chen@example.com}
 
 User:  Friday at 10:30 AM
-Agent [booking]: Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Reference #REV-6I4S.
+Agent [booking, stage=booking_confirm]: Lock it in: Friday 10:30AM IST for Alex Chen (alex.chen@example.com)? Reply Yes to confirm or No to pick another slot.
+
+User:  Yes, confirm
+Agent [booking, stage=done]: Done! Booked your performance review Friday 10:30AM IST for Alex Chen (alex.chen@example.com). Reference #REV-BYJ48B.
 ```
 
 Full JSON: `docs/demo_transcript.json`. Verification log: `docs/verify_log.txt` (14/14 PASS).
@@ -33,11 +36,11 @@ Full JSON: `docs/demo_transcript.json`. Verification log: `docs/verify_log.txt` 
 
 ```mermaid
 flowchart TB
-  UI[React Vite<br/>thread_id badge slot buttons] -->|POST /api/chat<br/>SSE /stream| API[FastAPI async]
-  API --> R[Router<br/>faq booking mixed greeting]
-  R -->|faq| RAG[FAQ RAG Node<br/>Chroma TF-IDF Page N]
-  R -->|booking| BK[Booking Node<br/>name email slot REV]
-  R -->|mixed| RAG
+  UI[React Vite<br/>thread_id badge stepper slot buttons] -->|POST /api/chat<br/>SSE /stream| API[FastAPI async]
+  API --> SUP[Supervisor node<br/>faq booking mixed greeting]
+  SUP -->|faq| RAG[FAQ specialist<br/>rewrite retrieve Page N]
+  SUP -->|booking| BK[Booking specialist<br/>name email slot confirm REV]
+  SUP -->|mixed| RAG
   RAG -->|booking_pending| BK
   RAG --> END
   BK --> END
@@ -45,13 +48,15 @@ flowchart TB
   RAG -.-> DB
 ```
 
+Supervisor (`graph.py:supervisor_node`) routes every turn; specialists do the work — the classic supervisor/worker multi-agent pattern on a single StateGraph. Human-in-the-loop: bare slot picks are held at `stage=booking_confirm` (`Lock it in…? Yes/No`); affirmed slots (`Let's go with Friday…`) book immediately per the sample dialogue. Re-invokes on `done` return the existing booking, never a second ref.
+
 State (`backend/app/graph/state.py`): `TypedDict` JSON-only — `messages, name, email, slot, stage, booking_pending, last_route, citations, booking_ref`. No Pydantic in state (SqliteSaver-safe). Pydantic lives only at API boundary (`schemas.py`).
 
 ![State machine](docs/state_diagram.png)
 
 Router (`router.py`): keywords first, LLM-free. Active booking defaults to `booking`; pure FAQ interrupt → `mixed`; idle slot/email clicks (`Tomorrow 11AM`, `ada@x.com`) → `booking`; `faq+booking verbs` → `booking`. RAG short-circuits greetings.
 
-RAG (`rag/`): `pypdf` per-page parse → 800/150 splitter → `all-MiniLM-L6-v2` → Chroma persistent `./data/chroma` (page+source metadata). Fallbacks: `data/chunks.json` TF-IDF → keyword overlap. Always `[{text, page, source}]`.
+RAG (`rag/`): `pypdf` per-page parse → 800/150 splitter → `all-MiniLM-L6-v2` → Chroma persistent `./data/chroma` (page+source metadata). Fallbacks: `data/chunks.json` TF-IDF → keyword overlap. LLM query rewrite (2 variants, merged top-4) with acronym expansion fallback when offline. Always `[{text, page, source}]`. Golden-set eval: `python scripts/eval_rag.py` (8/8).
 Knowledge base is dual-PDF: `employee_handbook.pdf` (source=`handbook`, policies + Page-4 performance reviews) + `Northwind_Standard_Benefits_Details.pdf` (source=`benefits`, PTO/leave/health). Context cites `[Page N]` or `[Page N (benefits)]`.
 
 LLM (`graph/llm.py`): Groq `openai/gpt-oss-20b` (default) → Gemini `gemini-2.0-flash` → rule fallback. `.env` autoloaded; deprecated Llama IDs auto-map to `gpt-oss-20b` (Groq retired Llama free-tier Aug 2026). Guardrails (`guardrails.py`): injection blocklist enforced in `/api/chat` + `/stream`, email regex, slot allowlist, 2000-char cap.
@@ -76,14 +81,14 @@ Docker: `docker-compose up --build` → backend `:8000`, frontend `:5173`.
 | Method | Path | Response |
 |---|---|---|
 | GET | `/health` | `{status: ok}` |
-| POST | `/api/chat` `{message, thread_id}` | `{reply, route, citations, booking{name,email,slot,reference}, thread_id}` |
-| POST | `/api/chat/stream` | SSE `node{route,thread_id}` → `token{token}*` → `done{thread_id,route,citations,booking,reply}` |
+| POST | `/api/chat` `{message, thread_id}` | `{reply, route, stage, citations, booking{name,email,slot,reference}, thread_id}` |
+| POST | `/api/chat/stream` | SSE `node{route,thread_id}` → `token{token}*` → `done{thread_id,route,stage,citations,booking,reply}` |
 | GET | `/api/slots` | `{slots: [Tomorrow 11AM, Tomorrow 3PM, Friday 10:30AM IST]}` |
 | POST | `/api/reset` `{thread_id}` | `{thread_id, status: reset}` |
 
-`route` drives UI badge: `Router → FAQ RAG / Booking / Mixed`. `citations` renders `[Page N]`. `booking.reference` like `#REV-XXXXXX` (6-char CSPRNG) on `done`.
+`route` drives UI badge: `Router → FAQ RAG / Booking / Mixed`. `stage` (`idle|booking_name|booking_email|booking_slot|booking_confirm|done`) drives the progress stepper. `citations` renders `[Page N]`. `booking.reference` like `#REV-XXXXXX` (6-char CSPRNG) on `done`.
 
-Frontend (`frontend/src`): `api.js` SSE parser, `App.jsx` thread copy/new + status dot, `Chat.jsx` slot buttons, citation `<details>`, booking card, empty/typing/error states, aria-live, mobile-first.
+Frontend (`frontend/src`): `api.js` SSE parser, `App.jsx` thread copy/new + status dot, `Chat.jsx` slot buttons, `Stepper.jsx` Name→Email→Slot→Confirmed tracker, citation `<details>`, booking card, confirm row, suggestion chips, empty/typing/error states, aria-live, mobile-first. UI proof: `scripts/capture_ui.py` drives the real app in headless Chromium and saves `docs/screenshot_ui.png`.
 
 ## Verification
 
@@ -95,14 +100,19 @@ npm run build                       # vite build success (frontend/)
 ```
 
 ```
-[PASS] RAG answer cites Page 4 (citations=[4, 3])
+[PASS] RAG answer cites Page 4 (citations=[4])
 [PASS] booking asks for name / email / slot
+[PASS] booking asks to confirm (stage=booking_confirm)
+[PASS] confirm-no releases slot
 [PASS] booking completes with ref #REV-2R6WUP (6-char CSPRNG)
+[PASS] affirmed slot books immediately
 [PASS] FAQ interrupt answered mid-booking (route=mixed)
 [PASS] booking resumes after interrupt (name kept)
 [PASS] SSE stream emits node/token/done events
 verify: OK
 ```
+
+CI (`.github/workflows/ci.yml`) runs `pytest` + `verify.py` on every push/PR.
 
 Manual: book via slot button on fresh thread, interrupt with PTO question mid-booking, restart backend — same `thread_id` history persists via `data/checkpoints.db`.
 
@@ -128,6 +138,7 @@ Tools: Copilot, Cursor, Claude, ChatGPT.
 5. **Dead Groq model + unloaded `.env`** — AI defaulted to `llama-3.3-70b-versatile`; Groq retired it Aug 2026 → every call 404 `model_not_found` and the app silently ran rule-based fallback despite keys set (`llm.py` never called `load_dotenv`). Diagnosed by invoking the model directly and surfacing the hidden exception. Fix: default `openai/gpt-oss-20b`, deprecated-ID map, `load_dotenv()` in `llm.py`, `active_provider()` status helper.
 6. **Fake Sources on refusals** — retriever force-returned `chunks[:k]` with zero signal, so out-of-scope answers (code requests, missing PTO text) carried `Sources (3)` for pages that don't support the answer. Diagnosed from UI transcript. Fix: return `[]` on no signal, out-of-scope short-circuit with `citations=[]`, PTO acronym expansion, strip citations when the LLM disavows its own context.
 7. **Shadowed `_tid` + weak refs** — a duplicated `_tid` def meant the 128-char thread cap never ran (adversarial audit caught it: 10KB IDs stored); refs used `random` 4-char. Fix: removed shadow def, 6-char `secrets` refs, 100/min rate limiting with 429s, 50-turn history cap, key/path redaction in 500s — all covered by `scripts/security_audit.py` (70+ checks).
+8. **Malformed SSE → silent double-invoke** — AI yielded raw dicts to `EventSourceResponse` (expects `ServerSentEvent`), producing an unparseable stream; the UI fell back to a second POST that re-invoked the graph on `done` state and rendered greeting text over a booked card. Diagnosed via headless-Chromium capture (`scripts/capture_ui.py`). Fix: hand-framed `StreamingResponse` SSE always, plus a `done`-state guard that returns the existing booking instead of minting a second ref.
 
 ## Structure
 

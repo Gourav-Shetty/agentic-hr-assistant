@@ -66,14 +66,14 @@ export async function reset(thread_id) {
  * Streaming chat via SSE.
  * Parses `event:` / `data:` frames from POST /api/chat/stream.
  *
- * Backend events: node {route, thread_id}, token {token}, done {thread_id, route}.
+ * Backend events: node {route, thread_id}, token {token}, done {thread_id, route, stage}.
  * Forward-compatible: also accepts citations {citations}, booking {booking},
- * meta/reply {reply|citations|booking|route|thread_id}, and error {detail|message}.
+ * meta/reply {reply|citations|booking|route|thread_id|stage}, and error {detail|message}.
  *
  * @param {string} message
  * @param {string} thread_id
  * @param {{ onNode?, onToken?, onDone?, onError? }} handlers
- * @returns {Promise<{ reply, route, citations, booking, thread_id }>}
+ * @returns {Promise<{ reply, route, citations, booking, thread_id, stage }>}
  */
 export async function streamChat(message, thread_id, handlers = {}) {
   const { onNode, onToken, onDone, onError } = handlers;
@@ -102,6 +102,7 @@ export async function streamChat(message, thread_id, handlers = {}) {
   let tid = thread_id || "";
   let citations = [];
   let booking = null;
+  let stage = "";
   let serverError = null;
 
   const dispatch = (event, rawData) => {
@@ -118,6 +119,7 @@ export async function streamChat(message, thread_id, handlers = {}) {
       case "node":
         if (data.route) route = String(data.route);
         if (data.thread_id) tid = String(data.thread_id);
+        if (typeof data.stage === "string" && data.stage) stage = String(data.stage);
         if (onNode) onNode(data);
         break;
       case "token":
@@ -129,9 +131,11 @@ export async function streamChat(message, thread_id, handlers = {}) {
       case "citations":
         if (Array.isArray(data.citations)) citations = data.citations;
         else if (Array.isArray(data)) citations = data;
+        if (typeof data.stage === "string" && data.stage) stage = String(data.stage);
         break;
       case "booking":
         booking = data.booking !== undefined ? data.booking : data;
+        if (typeof data.stage === "string" && data.stage) stage = String(data.stage);
         break;
       case "meta":
       case "reply":
@@ -139,10 +143,11 @@ export async function streamChat(message, thread_id, handlers = {}) {
         if (typeof data.reply === "string" && data.reply && !reply) reply = data.reply;
         if (data.route) route = String(data.route);
         if (data.thread_id) tid = String(data.thread_id);
+        if (typeof data.stage === "string" && data.stage) stage = String(data.stage);
         if (Array.isArray(data.citations)) citations = data.citations;
         if (data.booking !== undefined) booking = data.booking;
         if (event === "done" && onDone) {
-          onDone({ reply, route, citations, booking, thread_id: tid });
+          onDone({ reply, route, citations, booking, thread_id: tid, stage });
         }
         break;
       case "error":
@@ -206,7 +211,7 @@ export async function streamChat(message, thread_id, handlers = {}) {
   }
 
   if (serverError) throw serverError;
-  return { reply, route, citations, booking, thread_id: tid };
+  return { reply, route, citations, booking, thread_id: tid, stage };
 }
 
 export const API_BASE_URL = API_BASE;

@@ -149,6 +149,7 @@ def _respond(result: dict, thread_id: str) -> ChatResponse:
             reference=result.get("booking_ref"),
         ),
         thread_id=thread_id,
+        stage=str(result.get("stage") or "idle"),
     )
 
 
@@ -190,27 +191,25 @@ async def chat_stream(req: ChatRequest):
     try:
         if not _check_rate():
             return _limited()
+        from fastapi.responses import StreamingResponse
+
         from backend.app.graph.guardrails import is_injection
+
+        def _frames(events):
+            async def raw():
+                async for evt in events:
+                    yield f"event: {evt['event']}\ndata: {evt['data']}\n\n"
+            return StreamingResponse(raw(), media_type="text/event-stream",
+                                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
         if is_injection(req.message or ""):
             thread_id = _tid(req.thread_id)
 
             async def blocked():
                 yield {"event": "node", "data": json.dumps({"route": "greeting", "thread_id": thread_id})}
-                yield {"event": "done", "data": json.dumps({"thread_id": thread_id, "route": "greeting", "citations": [], "booking": None, "reply": "Blocked prompt-injection attempt."})}
+                yield {"event": "done", "data": json.dumps({"thread_id": thread_id, "route": "greeting", "stage": "idle", "citations": [], "booking": None, "reply": "Blocked prompt-injection attempt."})}
 
-            try:
-                from sse_starlette.sse import EventSourceResponse
-
-                return EventSourceResponse(blocked())
-            except ImportError:
-                from fastapi.responses import StreamingResponse
-
-                async def raw_blocked():
-                    async for evt in blocked():
-                        yield f"event: {evt['event']}\ndata: {evt['data']}\n\n"
-
-                return StreamingResponse(raw_blocked(), media_type="text/event-stream")
+            return _frames(blocked())
         thread_id = _tid(req.thread_id)
         result, _ = await _run(get_graph(), req.message, thread_id)
         resp = _respond(result, thread_id)
@@ -219,17 +218,8 @@ async def chat_stream(req: ChatRequest):
             for tok in _chunks(resp.reply):
                 yield {"event": "token", "data": json.dumps({"token": tok})}
                 await asyncio.sleep(0)
-            yield {"event": "done", "data": json.dumps({"thread_id": thread_id, "route": resp.route, "citations": resp.citations, "booking": resp.booking.model_dump() if resp.booking else None, "reply": resp.reply})}
-        try:
-            from sse_starlette.sse import EventSourceResponse
-            return EventSourceResponse(gen())
-        except ImportError:
-            from fastapi.responses import StreamingResponse
-            async def raw():
-                async for evt in gen():
-                    yield f"event: {evt['event']}\ndata: {evt['data']}\n\n"
-            return StreamingResponse(raw(), media_type="text/event-stream",
-                                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+            yield {"event": "done", "data": json.dumps({"thread_id": thread_id, "route": resp.route, "stage": resp.stage, "citations": resp.citations, "booking": resp.booking.model_dump() if resp.booking else None, "reply": resp.reply})}
+        return _frames(gen())
     except Exception as exc:
         return _err(exc)
 

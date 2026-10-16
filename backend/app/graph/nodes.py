@@ -3,6 +3,29 @@
 from .guardrails import sanitize, validate_email
 from backend.app.tools.booking import SLOTS, extract_name_email, generate_ref, match_slot
 
+import re
+
+_AFFIRM = re.compile(
+    r"\b(yes|yeah|yep|yup|confirm|confirmed|lock it|lock it in|proceed|go ahead)\b"
+    r"|let'?s go|go with|book it|sounds good|that works|works for me|\bok\b|\bokay\b",
+    re.IGNORECASE,
+)
+_CANCEL = re.compile(
+    r"\b(no|nope|don'?t|cancel|change|different|other|another|back)\b",
+    re.IGNORECASE,
+)
+
+
+def _wants_confirm(text: str) -> bool:
+    return bool(_AFFIRM.search(text or ""))
+
+
+def _wants_change(text: str) -> bool:
+    t = (text or "").lower()
+    if _AFFIRM.search(text or ""):
+        return False  # affirmation wins ties ("no, actually yes")
+    return bool(_CANCEL.search(text or ""))
+
 
 def _last_user_text(state: dict) -> str:
     for m in reversed(state.get("messages", []) or []):
@@ -24,6 +47,25 @@ def _expand_query(query: str) -> str:
     if "benefit" in tl:
         extra.append("health insurance coverage plan")
     return f"{query} {' '.join(extra)}".strip() if extra else query
+
+
+def _rewrite_queries(query: str) -> list[str]:
+    """LLM query rewrite (2 variants) for better recall; falls back to expansion."""
+    base = _expand_query(query)
+    try:
+        from .llm import active_provider, generate as default_generate
+
+        if active_provider() == "none":
+            return [base]
+        out = default_generate(
+            f"Rewrite this HR question into 2 short search queries, one per line, no numbering: {query}",
+            "",
+        )
+        variants = [ln.strip("- •0123456789. ").strip() for ln in out.splitlines()]
+        variants = [v for v in variants if v and v.lower() != query.lower()][:2]
+        return [base, *variants] if variants else [base]
+    except Exception:
+        return [base]
 
 
 OUT_OF_SCOPE_HINTS = (
@@ -53,6 +95,7 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
             "messages": _append(state, "assistant", reply),
             "citations": [],
             "last_route": "greeting",
+            "just_answered_faq": False,
         }
     if _is_out_of_scope(query):
         reply = ("I can help with handbook questions (PTO, benefits, performance reviews) "
@@ -65,7 +108,18 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
     docs, context, citations = [], "", []
     if retriever_fn is not None:
         try:
-            docs = retriever_fn(_expand_query(query)) or []
+            seen: set[tuple] = set()
+            for variant in _rewrite_queries(query):
+                for d in retriever_fn(variant) or []:
+                    key = (d.get("text") if isinstance(d, dict) else str(d),
+                           d.get("page") if isinstance(d, dict) else None)
+                    if key not in seen:
+                        seen.add(key)
+                        docs.append(d)
+                    if len(docs) >= 4:
+                        break
+                if len(docs) >= 4:
+                    break
         except Exception:
             docs = []
     for d in docs:
@@ -89,6 +143,7 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
             "messages": _append(state, "assistant", reply),
             "citations": [],
             "last_route": "mixed" if state.get("booking_pending") else "faq",
+            "just_answered_faq": False,
         }
     try:
         reply = gen(query, context)
@@ -103,6 +158,7 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
         "messages": _append(state, "assistant", reply),
         "citations": citations,
         "last_route": "mixed" if state.get("booking_pending") else "faq",
+        "just_answered_faq": bool(state.get("booking_pending")),
         # stage/booking fields untouched -> resume works
     }
 
@@ -113,6 +169,17 @@ def booking_node(state: dict, llm_fn=None) -> dict:
     name = state.get("name")
     email = state.get("email")
     slot = state.get("slot")
+
+    if state.get("stage") == "done" and state.get("booking_ref"):
+        # Already booked: never mint a second ref on re-invoke/double-submit.
+        reply = (f"Your performance review is already booked for {slot} ({name}). "
+                 f"Reference {state.get('booking_ref')}. Click New above to start another booking.")
+        return {
+            "name": name, "email": email, "slot": slot,
+            "booking_pending": False, "last_route": "booking",
+            "citations": [], "stage": "done", "booking_ref": state.get("booking_ref"),
+            "messages": _append(state, "assistant", reply),
+        }
 
     extracted = extract_name_email(text)
     if not name and extracted.get("name"):
@@ -136,14 +203,15 @@ def booking_node(state: dict, llm_fn=None) -> dict:
         "citations": list(state.get("citations") or []),
     }
 
-    # If we just answered an FAQ (rag ran first in mixed flow), prepend that answer
-    # so the user sees FAQ + booking resume in one turn.
+    # Mixed flow: rag just answered an FAQ this turn (flag), so prepend that
+    # answer and resume booking in one message. Flag is consumed here.
     prefix = ""
     msgs = state.get("messages", []) or []
-    if msgs and isinstance(msgs[-1], dict) and msgs[-1].get("role") == "assistant":
-        prev = str(msgs[-1].get("content", ""))
-        if "[Page" in prev and len(prev) > 20:
+    if state.get("just_answered_faq") and msgs and isinstance(msgs[-1], dict) and msgs[-1].get("role") == "assistant":
+        prev = str(msgs[-1].get("content", "")).strip()
+        if prev:
             prefix = prev + "\n\nReturning to your booking — "
+    update["just_answered_faq"] = False
 
     tl = text.lower().strip()
     is_greeting = tl in {"hi", "hello", "hey", "yo", "thanks", "thank you", "bye"} or (
@@ -168,7 +236,30 @@ def booking_node(state: dict, llm_fn=None) -> dict:
     elif not slot:
         reply = "Which slot works for you? Options: " + ", ".join(SLOTS)
         update["stage"] = "booking_slot"
+    elif state.get("stage") == "booking_confirm" and _wants_change(text):
+        # Human-in-the-loop said no: release the held slot, ask again.
+        # (_wants_change is False when affirmation is present, so "no, actually yes" confirms.)
+        reply = "No problem — which slot works instead? Options: " + ", ".join(SLOTS)
+        update["slot"] = None
+        update["stage"] = "booking_slot"
+    elif (state.get("stage") == "booking_confirm" and not _wants_confirm(text)) or (
+        found_slot and state.get("stage") == "booking_slot" and not _wants_confirm(text)
+    ):
+        # Hold the slot and ask for explicit confirmation (human-in-the-loop).
+        held = slot or found_slot
+        update["slot"] = held
+        reply = (f"Lock it in: {held} for {name} ({email})? "
+                 f"Reply Yes to confirm or No to pick another slot.")
+        update["stage"] = "booking_confirm"
     else:
+        if not slot:
+            # Affirmed with nothing held yet — ask for a slot instead of booking None.
+            reply = "Which slot works for you? Options: " + ", ".join(SLOTS)
+            update["stage"] = "booking_slot"
+            update["messages"] = _append(state, "assistant", prefix + reply if prefix else reply)
+            if prefix:
+                update["last_route"] = "mixed"
+            return update
         ref = generate_ref()
         reply = (
             f"Done! Booked your performance review {slot} for {name} ({email}). "

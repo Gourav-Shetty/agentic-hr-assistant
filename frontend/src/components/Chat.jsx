@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chat as chatOnce, getSlots, streamChat } from "../api.js";
+import { Stepper } from "./Stepper.jsx";
 
 let msgSeq = 0;
 const nextId = () => `m-${Date.now()}-${msgSeq++}`;
@@ -88,6 +89,7 @@ export default function Chat({ threadId, onStatusChange, onRouteChange }) {
   const [error, setError] = useState("");
   const [slots, setSlots] = useState([]);
   const [slotsError, setSlotsError] = useState("");
+  const [stage, setStage] = useState("idle");
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const busyRef = useRef(false);
@@ -114,6 +116,10 @@ export default function Chat({ threadId, onStatusChange, onRouteChange }) {
 
   const patchMessage = useCallback((id, patch) => {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  }, []);
+
+  const updateStage = useCallback((value) => {
+    if (typeof value === "string" && value) setStage(value);
   }, []);
 
   const appendToken = useCallback((id, tok) => {
@@ -144,6 +150,7 @@ export default function Chat({ threadId, onStatusChange, onRouteChange }) {
           booking: final.booking || null,
         });
         if (route) onRouteChange?.(route);
+        if (final?.stage) updateStage(final.stage);
       };
 
       try {
@@ -151,6 +158,7 @@ export default function Chat({ threadId, onStatusChange, onRouteChange }) {
         const streamed = await streamChat(text, threadId, {
           onNode: (n) => {
             if (n?.route) onRouteChange?.(n.route);
+            if (n?.stage) updateStage(n.stage);
           },
           onToken: (tok) => appendToken(aiId, tok),
           onDone: (d) => {
@@ -159,6 +167,7 @@ export default function Chat({ threadId, onStatusChange, onRouteChange }) {
               citations: Array.isArray(d?.citations) ? d.citations : [],
               booking: d?.booking || null,
             });
+            if (d?.stage) updateStage(d.stage);
           },
         });
         // Backend stream carries route/thread but not citations/booking yet:
@@ -174,6 +183,7 @@ export default function Chat({ threadId, onStatusChange, onRouteChange }) {
             patchMessage(aiId, { citations: streamed.citations });
           }
           if (streamed.booking) patchMessage(aiId, { booking: streamed.booking });
+          if (streamed.stage) updateStage(streamed.stage);
         }
         onStatusChange?.("idle");
       } catch (err) {
@@ -197,7 +207,7 @@ export default function Chat({ threadId, onStatusChange, onRouteChange }) {
         inputRef.current?.focus();
       }
     },
-    [appendToken, input, onRouteChange, onStatusChange, patchMessage, threadId]
+    [appendToken, input, onRouteChange, onStatusChange, patchMessage, threadId, updateStage]
   );
 
   const onSubmit = (e) => {
@@ -210,10 +220,27 @@ export default function Chat({ threadId, onStatusChange, onRouteChange }) {
     send(slot);
   };
 
+  const onSuggestionClick = (text) => {
+    send(text);
+  };
+
+  const onConfirmClick = () => {
+    send("Yes, confirm");
+  };
+
+  const onChangeSlotClick = () => {
+    send("Change slot");
+  };
+
   const showEmpty = messages.length === 0 && !busy && !error;
+  const isEmptyThread = messages.length === 0;
+  const showConfirmActions = stage === "booking_confirm";
 
   return (
     <section aria-label="Conversation" className="flex flex-col">
+      {/* Booking progress */}
+      <Stepper stage={stage} />
+
       {/* Slot quick actions */}
       <div className="mb-3" aria-label="Quick booking slots">
         {slots.length > 0 ? (
@@ -288,6 +315,52 @@ export default function Chat({ threadId, onStatusChange, onRouteChange }) {
           role="alert"
         >
           {error}
+        </div>
+      )}
+
+      {/* Booking confirmation quick actions */}
+      {showConfirmActions && (
+        <div className="mt-3 flex flex-wrap gap-2" aria-label="Booking confirmation actions">
+          <button
+            type="button"
+            onClick={onConfirmClick}
+            disabled={busy}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Confirm booking"
+          >
+            Yes, confirm
+          </button>
+          <button
+            type="button"
+            onClick={onChangeSlotClick}
+            disabled={busy}
+            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Change booking slot"
+          >
+            Change slot
+          </button>
+        </div>
+      )}
+
+      {/* Suggestion chips — empty thread only */}
+      {isEmptyThread && (
+        <div className="mt-3 flex flex-wrap gap-2" aria-label="Suggested questions">
+          {[
+            "How often are performance reviews?",
+            "What health benefits are covered?",
+            "Book a performance review",
+          ].map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => onSuggestionClick(suggestion)}
+              disabled={busy}
+              className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label={`Ask: ${suggestion}`}
+            >
+              {suggestion}
+            </button>
+          ))}
         </div>
       )}
 

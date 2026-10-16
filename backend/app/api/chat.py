@@ -84,7 +84,8 @@ async def _run(graph, message: str, thread_id: str):
 def _make_checkpointer():
     try:
         from langgraph.checkpoint.sqlite import SqliteSaver
-    except ImportError:
+    except ImportError as exc:
+        print(f"checkpointer: langgraph-checkpoint-sqlite missing ({exc}); running stateless")
         return None
     try:
         conn = sqlite3.connect(_db_path(), check_same_thread=False)
@@ -93,13 +94,16 @@ def _make_checkpointer():
         if callable(setup):
             try:
                 setup()
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"checkpointer: setup warning ({type(exc).__name__}: {exc})")
+        print(f"checkpointer: sqlite ready at {_db_path()}")
         return cp
-    except Exception:
+    except Exception as exc:
+        print(f"checkpointer: sqlite init failed ({type(exc).__name__}: {exc}); trying conn string")
         try:
             return SqliteSaver.from_conn_string(_db_path())
-        except Exception:
+        except Exception as exc2:
+            print(f"checkpointer: unavailable ({type(exc2).__name__}); running stateless")
             return None
 
 

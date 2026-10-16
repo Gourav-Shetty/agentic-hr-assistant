@@ -37,7 +37,33 @@ app.include_router(slots_router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    info: dict = {"status": "ok"}
+    try:
+        from backend.app.version import APP_VERSION
+
+        info["version"] = APP_VERSION
+    except ImportError:
+        info["version"] = "unknown"
+    try:
+        from backend.app.api.chat import _db_path, get_graph
+
+        get_graph()  # ensure compiled
+        import sqlite3
+
+        conn = sqlite3.connect(_db_path(), check_same_thread=False, timeout=5)
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        threads = 0
+        if "checkpoints" in tables:
+            try:
+                threads = conn.execute("SELECT COUNT(DISTINCT thread_id) FROM checkpoints").fetchone()[0]
+            except Exception:
+                threads = -1
+        conn.close()
+        info["checkpointer"] = "sqlite" if "checkpoints" in tables else "none"
+        info["threads"] = threads
+    except Exception as exc:
+        info["checkpointer"] = f"error: {type(exc).__name__}"
+    return info
 
 
 @app.exception_handler(Exception)

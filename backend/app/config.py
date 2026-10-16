@@ -2,6 +2,13 @@
 
 import os
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 
 def _get(key: str, default: str = "") -> str:
     return os.getenv(key, default)

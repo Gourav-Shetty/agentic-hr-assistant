@@ -2,19 +2,45 @@
 
 import os
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 SYSTEM_HINT = "You are a helpful HR assistant. Answer using the provided context. Cite pages like [Page N]."
+
+
+def active_provider() -> str:
+    """groq | gemini | none — without leaking keys."""
+    if os.getenv("GROQ_API_KEY", "").strip():
+        return "groq"
+    if os.getenv("GEMINI_API_KEY", "").strip():
+        return "gemini"
+    return "none"
+
+
+DEPRECATED_MODELS = {
+    "llama-3.3-70b-versatile": "openai/gpt-oss-20b",
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+    "llama3-70b-8192": "openai/gpt-oss-20b",
+    "llama3-8b-8192": "openai/gpt-oss-20b",
+}
 
 
 def get_llm():
     """Return a chat model or None if no keys / libs available."""
-    groq_key = os.getenv("GROQ_API_KEY", "")
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
     if groq_key:
         try:
             from langchain_groq import ChatGroq
 
+            model = os.getenv("LLM_MODEL", "openai/gpt-oss-20b").strip() or "openai/gpt-oss-20b"
+            model = DEPRECATED_MODELS.get(model, model)
             return ChatGroq(
-                model=os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"),
+                model=model,
                 api_key=groq_key,
             )
         except Exception:

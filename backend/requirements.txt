@@ -3,6 +3,7 @@ uvicorn
 pydantic
 python-dotenv
 langgraph
+langgraph-checkpoint-sqlite
 langchain-core
 langchain-groq
 langchain-google-genai

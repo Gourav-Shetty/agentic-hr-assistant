@@ -15,6 +15,29 @@ def _append(state: dict, role: str, content: str) -> list:
     return [*(state.get("messages", []) or []), {"role": role, "content": content}]
 
 
+def _expand_query(query: str) -> str:
+    """Expand HR acronyms so short queries retrieve (PTO -> paid time off leave)."""
+    tl = query.lower()
+    extra = []
+    if "pto" in tl.split() or tl.strip() == "pto":
+        extra.append("paid time off leave vacation absence")
+    if "benefit" in tl:
+        extra.append("health insurance coverage plan")
+    return f"{query} {' '.join(extra)}".strip() if extra else query
+
+
+OUT_OF_SCOPE_HINTS = (
+    "write", "python", "code", "program", "script", "function",
+    "print number", "fibonacci", "sort", "algorithm", "math",
+    "joke", "poem", "story", "recipe", "weather", "news",
+)
+
+
+def _is_out_of_scope(query: str) -> bool:
+    tl = query.lower()
+    return any(h in tl for h in OUT_OF_SCOPE_HINTS)
+
+
 def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
     """Answer HR question with citations. Preserves booking progress."""
     from .llm import generate as default_generate
@@ -31,10 +54,18 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
             "citations": [],
             "last_route": "greeting",
         }
+    if _is_out_of_scope(query):
+        reply = ("I can help with handbook questions (PTO, benefits, performance reviews) "
+                 "or booking a performance review — I can't write code or answer general questions.")
+        return {
+            "messages": _append(state, "assistant", reply),
+            "citations": [],
+            "last_route": "faq",
+        }
     docs, context, citations = [], "", []
     if retriever_fn is not None:
         try:
-            docs = retriever_fn(query) or []
+            docs = retriever_fn(_expand_query(query)) or []
         except Exception:
             docs = []
     for d in docs:
@@ -51,10 +82,21 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
             label = f"[Page {page} ({source})]" if source and source != "handbook" else f"[Page {page}]"
             context += f"{label} {text}\n"
     gen = llm_fn or default_generate
+    if not docs:
+        reply = ("I couldn't find that in the handbook or benefits documents. "
+                 "Try asking about performance reviews, leave, benefits, or booking a review.")
+        return {
+            "messages": _append(state, "assistant", reply),
+            "citations": [],
+            "last_route": "mixed" if state.get("booking_pending") else "faq",
+        }
     try:
         reply = gen(query, context)
     except Exception:
         reply = f"Based on the handbook: {context[:500]}" if context else "I couldn't find that in the handbook."
+    low = reply.lower().replace("\u2019", "'").replace("\u2018", "'")
+    if ("sorry" in low or "couldn't find" in low or "could not find" in low) and ("don't contain" in low or "do not contain" in low or "does not include" in low or "no information" in low or "no details" in low):
+        citations = []
     if not citations and context:
         reply = reply  # no pages found; leave reply as-is
     return {

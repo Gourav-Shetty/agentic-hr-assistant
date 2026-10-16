@@ -103,7 +103,7 @@ def _tfidf_search(chunks: list[dict], text: str, k: int) -> list[dict]:
     ]
     overlap.sort(reverse=True)
     hits = [chunks[i] for o, i in overlap[:k] if o > 0]
-    return hits or chunks[:k]
+    return hits
 
 
 def _query_chroma(text: str, k: int) -> list[dict] | None:

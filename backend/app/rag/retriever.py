@@ -1,7 +1,7 @@
-"""Retrieve handbook chunks for a user query.
+"""Retrieve handbook + benefits chunks for a user query.
 
 Order: Chroma (persistent, dense embeddings) -> data/chunks.json TF-IDF
--> keyword overlap fallback. Always returns [{text, page}] with integer
+-> keyword overlap fallback. Always returns [{text, page, source}] with integer
 page numbers so answers can cite [Page N]. Never raises on missing
 deps/data: returns [] when nothing is indexed.
 """
@@ -62,7 +62,7 @@ def _load_chunks_json() -> list[dict]:
             page = int(item.get("page") or 1)
         except (TypeError, ValueError):
             page = 1
-        chunks.append({"text": str(item["text"]), "page": max(1, page)})
+        chunks.append({"text": str(item["text"]), "page": max(1, page), "source": str(item.get("source") or "handbook")})
     _CHUNKS_CACHE["mtime"] = mtime
     _CHUNKS_CACHE["items"] = chunks
     return chunks
@@ -140,12 +140,12 @@ def _query_chroma(text: str, k: int) -> list[dict] | None:
             page = int((meta or {}).get("page") or 1)
         except (TypeError, ValueError):
             page = 1
-        out.append({"text": doc, "page": max(1, page)})
+        out.append({"text": doc, "page": max(1, page), "source": str((meta or {}).get("source") or "handbook")})
     return out or None
 
 
 def query(text: str, k: int = 4) -> list[dict]:
-    """Return up to k chunks as [{text, page}] for a user query."""
+    """Return up to k chunks as [{text, page, source}] for a user query."""
     text = (text or "").strip()
     if not text:
         return []

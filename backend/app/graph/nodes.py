@@ -41,12 +41,15 @@ def rag_node(state: dict, retriever_fn=None, llm_fn=None) -> dict:
         if isinstance(d, dict):
             page = d.get("page")
             text = d.get("text", "")
+            source = d.get("source", "handbook")
         else:
             page, text = getattr(d, "page", None), getattr(d, "text", str(d))
+            source = getattr(d, "source", "handbook")
         if page is not None and page not in citations:
             citations.append(page)
         if text:
-            context += f"[Page {page}] {text}\n"
+            label = f"[Page {page} ({source})]" if source and source != "handbook" else f"[Page {page}]"
+            context += f"{label} {text}\n"
     gen = llm_fn or default_generate
     try:
         reply = gen(query, context)

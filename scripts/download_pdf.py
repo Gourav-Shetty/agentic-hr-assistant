@@ -16,9 +16,14 @@ DEFAULT_URL = (
     "https://raw.githubusercontent.com/Azure-Samples/"
     "azure-search-openai-demo/main/data/employee_handbook.pdf"
 )
+SECONDARY_URL = (
+    "https://raw.githubusercontent.com/Azure-Samples/"
+    "azure-search-openai-demo/main/data/Northwind_Standard_Benefits_Details.pdf"
+)
 
 ROOT = Path(__file__).resolve().parents[1]  # repo root (scripts/ -> root)
 DEST = ROOT / "data" / "employee_handbook.pdf"
+DEST_SECONDARY = ROOT / "data" / "Northwind_Standard_Benefits_Details.pdf"
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -41,6 +46,12 @@ def pdf_url() -> str:
     return load_env_file(ROOT / ".env").get("PDF_URL", DEFAULT_URL)
 
 
+def secondary_url() -> str:
+    if os.environ.get("SECONDARY_PDF_URL"):
+        return os.environ["SECONDARY_PDF_URL"]
+    return load_env_file(ROOT / ".env").get("SECONDARY_PDF_URL", SECONDARY_URL)
+
+
 def download(url: str, dest: Path = DEST, force: bool = False) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.is_file() and dest.stat().st_size > 0 and not force:
@@ -55,19 +66,24 @@ def download(url: str, dest: Path = DEST, force: bool = False) -> Path:
 def main(argv: list[str] | None = None) -> int:
     args = argv if argv is not None else sys.argv[1:]
     force = "--force" in args
-    if DEST.is_file() and DEST.stat().st_size > 0 and not force:
-        print(f"exists: {DEST}, skipping")
-        return 0
-    try:
-        download(pdf_url(), DEST, force=force)
-        return 0
-    except Exception as exc:  # offline / no network: keep going with a message
-        if DEST.is_file() and DEST.stat().st_size > 0:
-            print(f"warning: download failed ({exc}); reusing existing {DEST}")
-            return 0
-        print(f"error: could not download handbook ({exc}); "
-              f"place the PDF at {DEST} manually and re-run ingest")
-        return 1
+    ok = True
+    for url, dest in ((pdf_url(), DEST), (secondary_url(), DEST_SECONDARY)):
+        if dest.is_file() and dest.stat().st_size > 0 and not force:
+            print(f"exists: {dest}, skipping")
+            continue
+        try:
+            download(url, dest, force=force)
+        except Exception as exc:  # offline / no network: keep going with a message
+            if dest.is_file() and dest.stat().st_size > 0:
+                print(f"warning: download failed ({exc}); reusing existing {dest}")
+                continue
+            if dest == DEST_SECONDARY:
+                print(f"warning: secondary benefits PDF unavailable ({exc}); continuing with handbook only")
+                continue
+            print(f"error: could not download handbook ({exc}); "
+                  f"place the PDF at {dest} manually and re-run ingest")
+            ok = False
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

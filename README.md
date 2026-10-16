@@ -51,7 +51,8 @@ State (`backend/app/graph/state.py`): `TypedDict` JSON-only — `messages, name,
 
 Router (`router.py`): keywords first, LLM-free. Active booking defaults to `booking`; pure FAQ interrupt → `mixed`; idle slot/email clicks (`Tomorrow 11AM`, `ada@x.com`) → `booking`; `faq+booking verbs` → `booking`. RAG short-circuits greetings.
 
-RAG (`rag/`): `pypdf` per-page parse → 800/150 splitter → `all-MiniLM-L6-v2` → Chroma persistent `./data/chroma` (page metadata). Fallbacks: `data/chunks.json` TF-IDF → keyword overlap. Always `[{text, page}]`.
+RAG (`rag/`): `pypdf` per-page parse → 800/150 splitter → `all-MiniLM-L6-v2` → Chroma persistent `./data/chroma` (page+source metadata). Fallbacks: `data/chunks.json` TF-IDF → keyword overlap. Always `[{text, page, source}]`.
+Knowledge base is dual-PDF: `employee_handbook.pdf` (source=`handbook`, policies + Page-4 performance reviews) + `Northwind_Standard_Benefits_Details.pdf` (source=`benefits`, PTO/leave/health). Context cites `[Page N]` or `[Page N (benefits)]`.
 
 LLM (`graph/llm.py`): Groq `llama-3.3-70b-versatile` → Gemini `gemini-2.0-flash` → rule fallback. Guardrails (`guardrails.py`): injection blocklist enforced in `/api/chat` + `/stream`, email regex, slot allowlist, 2000-char cap.
 
@@ -60,8 +61,8 @@ LLM (`graph/llm.py`): Groq `llama-3.3-70b-versatile` → Gemini `gemini-2.0-flas
 ```bash
 pip install -r backend/requirements.txt
 cp .env.example .env   # optional: add GROQ_API_KEY / GEMINI_API_KEY, no quotes
-python scripts/download_pdf.py
-python -m backend.app.rag.ingest
+python scripts/download_pdf.py          # handbook + benefits PDFs
+python -m backend.app.rag.ingest --all  # 448 chunks (27 handbook + 421 benefits)
 uvicorn backend.app.main:app --port 8000
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
